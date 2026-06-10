@@ -1,0 +1,167 @@
+#!/usr/bin/env bash
+# .githooks/pre-commit
+#
+# Purpose: keep the .highland bundle and its rendered PDF in sync.
+# If the screenplay text inside the .highland (text.md) has changed
+# but the user did not re-export the PDF, block the commit.
+#
+# Dependencies: bash, git, unzip, shasum, awk. No external services.
+#
+# State: stores the last-known sha256 of text.md in .script-state at
+# the repo root. .script-state is a tracked file; the hook updates it
+# and re-stages it as part of any commit that bumps the screenplay.
+#
+# NOTE: this hook lives in .githooks/ (tracked, sharable). For it to
+# fire on a fresh clone, the cloner must run once:
+#     git config core.hooksPath .githooks
+
+set -e
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+
+STATE_FILE=".script-state"
+PDF_PATH="Blank Slate Full Script.pdf"
+
+# 1. Find the staged .highland file (added, copied, or modified).
+STAGED_HIGHLAND="$(
+    git diff --cached --name-only --diff-filter=ACM \
+    | grep -E '\.highland$' \
+    | head -n 1 \
+    || true
+)"
+
+if [ -z "$STAGED_HIGHLAND" ]; then
+    # No .highland in this commit; nothing for this hook to do.
+    exit 0
+fi
+
+# 2. Pull the *staged* blob (not the working tree copy) to a temp file.
+TMP_DIR="$(mktemp -d)"
+trap 'rm -rf "$TMP_DIR"' EXIT
+TMP_BUNDLE="$TMP_DIR/bundle.highland"
+git show ":${STAGED_HIGHLAND}" > "$TMP_BUNDLE"
+
+# 3. Locate <textbundle>/text.md inside the zip without hardcoding the
+#    textbundle name (it tracks the .highland filename, which may change).
+TEXT_PATH="$(
+    unzip -Z1 "$TMP_BUNDLE" 2>/dev/null \
+    | grep -E '\.textbundle/text\.md$' \
+    | head -n 1
+)"
+
+if [ -z "$TEXT_PATH" ]; then
+    echo "pre-commit: WARNING — could not find <textbundle>/text.md inside" >&2
+    echo "  '$STAGED_HIGHLAND'. Bundle may be corrupt or non-standard." >&2
+    echo "  Allowing commit; review manually." >&2
+    exit 0
+fi
+
+# 4. Hash the staged screenplay text.
+NEW_HASH="$(
+    unzip -p "$TMP_BUNDLE" "$TEXT_PATH" 2>/dev/null \
+    | shasum -a 256 \
+    | awk '{print $1}'
+)"
+
+# 5. Read the last recorded hash, if any.
+OLD_HASH=""
+if [ -f "$STATE_FILE" ]; then
+    OLD_HASH="$(
+        awk -F= '$1 == "text_md_sha256" {print $2}' "$STATE_FILE" \
+        | tr -d '[:space:]'
+    )"
+fi
+
+# 6. Unchanged → UI-only save; let it through.
+if [ "$NEW_HASH" = "$OLD_HASH" ]; then
+    exit 0
+fi
+
+# 7. Changed → require the rendered PDF to be in this commit too.
+PDF_STAGED="$(
+    git diff --cached --name-only --diff-filter=ACM \
+    | grep -F -x "$PDF_PATH" \
+    || true
+)"
+
+if [ -z "$PDF_STAGED" ]; then
+    cat >&2 <<EOF
+
+pre-commit: BLOCKED — screenplay text changed but the PDF was not re-exported.
+
+The .highland bundle's screenplay text (text.md inside the zip) has a new hash:
+    old: ${OLD_HASH:-<none recorded>}
+    new: $NEW_HASH
+
+Re-export from Highland (File > Export > PDF), save over:
+    $PDF_PATH
+
+Then stage both and retry:
+    git add "$STAGED_HIGHLAND" "$PDF_PATH"
+    git commit ...
+
+Page count and all derived facts in this repo depend on the rendered PDF.
+This hook does not run Highland for you — there's no headless export.
+Its job is to keep the script and its pagination in lock-step.
+
+EOF
+    exit 1
+fi
+
+# 8. PDF is staged. Record the new hash, re-stage state file.
+{
+    echo "text_md_sha256=$NEW_HASH"
+    echo "highland_path=$STAGED_HIGHLAND"
+    echo "updated_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+} > "$STATE_FILE"
+
+if ! git add "$STATE_FILE"; then
+    echo "" >&2
+    echo "pre-commit: ERROR — failed to stage updated $STATE_FILE." >&2
+    echo "  The new text.md hash was written to disk but not added to the commit." >&2
+    echo "  This would commit the bundle + PDF without updating the recorded baseline," >&2
+    echo "  leaving future commits unable to detect that the text changed." >&2
+    echo "  Aborting. Investigate the git add failure, then retry the commit." >&2
+    exit 1
+fi
+
+# 8b. Re-derive the tracked plain-text .fountain from the staged bundle's text.md
+#     (which IS the Fountain content). No manual Fountain export needed; it can
+#     never drift from what's committed.
+TMP_TEXT="$TMP_DIR/text.md"
+if unzip -p "$TMP_BUNDLE" "$TEXT_PATH" > "$TMP_TEXT" 2>/dev/null && [ -s "$TMP_TEXT" ]; then
+
+    # Tracked .fountain — the source the casting extractor + agents parse.
+    # BODY ONLY: strip the Fountain title page (start at the first slugline) so
+    # the cue extractor never reads TITLE:/AUTHOR:/NOTES: as character cues.
+    FOUNTAIN_PATH="Blank Slate Full Script.fountain"
+    if awk 'f || /^(INT|EXT|EST|I\/E)[.\/ ]/ {f=1} f' "$TMP_TEXT" > "$FOUNTAIN_PATH" && [ -s "$FOUNTAIN_PATH" ]; then
+        if git add "$FOUNTAIN_PATH"; then
+            echo "pre-commit: re-derived $FOUNTAIN_PATH (body only) from the screenplay."
+        else
+            echo "pre-commit: WARNING — could not stage $FOUNTAIN_PATH." >&2
+        fi
+    else
+        echo "pre-commit: WARNING — could not re-derive $FOUNTAIN_PATH." >&2
+    fi
+
+    # Regenerate the Squarespace script-reader HTML from the same extracted text.md
+    # (it carries the title page the body-only .fountain lacks). Output is gitignored
+    # (Claude Docs/generated/), so it is NOT committed — it's the current file to paste
+    # into the Squarespace code block. NON-FATAL: an HTML hiccup must never block a commit.
+    HTML_OUT="Claude Docs/generated/script_paged.html"
+    if command -v python3 >/dev/null 2>&1 && [ -f scripts/script_to_html_paged.py ]; then
+        mkdir -p "Claude Docs/generated" 2>/dev/null || true
+        if python3 scripts/script_to_html_paged.py --input "$TMP_TEXT" --out "$HTML_OUT" >/dev/null 2>&1; then
+            echo "pre-commit: regenerated $HTML_OUT (paste into Squarespace)."
+        else
+            echo "pre-commit: WARNING — $HTML_OUT regen failed (non-blocking)." >&2
+        fi
+    fi
+else
+    echo "pre-commit: WARNING — could not extract text.md; skipped .fountain refresh." >&2
+fi
+
+echo "pre-commit: script-state updated (text.md sha256: ${NEW_HASH:0:12}…). PDF staged. Proceeding."
+exit 0
