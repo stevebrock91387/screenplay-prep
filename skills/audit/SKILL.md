@@ -1,5 +1,5 @@
 ---
-name: screenplay-audit
+name: audit
 description: Run the read-only screenplay audit suite against the current project. Reads PROJECT_PROFILE.md §0 for the per-screenplay parameters, then dispatches the relevant auditor agents (continuity, motif, slugline, cast-cue, fact-drift, fidelity, structure, dialogue) and summarizes findings by severity. Use after a script revision, before circulating a draft, or to spot-check the derived production-doc corpus.
 ---
 
