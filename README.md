@@ -18,7 +18,19 @@ A reusable Claude Code **plugin** that packages the screenplay production-prep e
 | `bin/pre-commit` | the `.highland`↔PDF lock-step git hook. **Not a plugin hook** (those fire on tool events; the `.highland` is edited outside Claude Code in Highland). Install per-project: `git config core.hooksPath` pointed at a dir containing it, or copy it into `.githooks/`. |
 | `templates/` | `PROJECT_PROFILE.template.md` — the onboarding keystone. |
 
-## Local-dev test
+## Install (private marketplace)
+
+This repo is also its own marketplace (`brock-screenplays`, declared in `.claude-plugin/marketplace.json`):
+
+```bash
+claude plugin marketplace add "/path/to/screenplay-prep"   # local path, GitHub repo, or git URL
+claude plugin install screenplay-prep@brock-screenplays
+claude plugin list                                          # verify: enabled, v0.2.0
+```
+
+Or from inside a session: `/plugin marketplace add <path>` then `/plugin install screenplay-prep@brock-screenplays`. Choose scope at install (`--scope user` for every project, `--scope project` to commit per-repo). Inventory: 6 skills + 15 agents, ~2.1k always-on tokens.
+
+## Local-dev test (no install)
 
 ```bash
 claude --plugin-dir "/path/to/screenplay-prep"
@@ -29,4 +41,4 @@ claude --plugin-dir "/path/to/screenplay-prep"
 
 ## Status (v0.2.0)
 
-Skeleton + the six skills (`new` / `init` / `reconcile` / `audit` / `html` / `handoff`). Agents + scripts are the parameterized versions proven on Blank Slate (no-regression) and a Family Business smoke test (adapts cleanly — absent capabilities scope the run instead of failing). Headless `--plugin-dir` load verified: all 15 agents register under `screenplay-prep:` and all six skills resolve. **Known bootstrap duplication:** the agents/scripts here are copies of the Blank Slate repo's `.claude/agents/` + `scripts/`; once this plugin is installed, that repo's local copies become redundant and can be retired. Not yet wired to a marketplace (`marketplace.json` + `/plugin install`) — that's the next step. The one remaining hardcoding is `extract_characters.py` (the `#(\d+)#` marker regex + fountain source). See the originating `PLUGIN_PLAN.md`.
+Skeleton + the six skills (`new` / `init` / `reconcile` / `audit` / `html` / `handoff`) + a private marketplace (`brock-screenplays`). Agents + scripts are the parameterized versions proven on Blank Slate (no-regression) and a Family Business smoke test (adapts cleanly — absent capabilities scope the run instead of failing). Verified: headless `--plugin-dir` load (15 agents + 6 skills register under `screenplay-prep:`), and the full `marketplace add → install screenplay-prep@brock-screenplays → list` cycle (in an isolated config). **Known bootstrap duplication:** the agents/scripts here are copies of the Blank Slate repo's `.claude/agents/` + `scripts/`; once this plugin is installed, that repo's local copies become redundant and can be retired. The one remaining hardcoding is `extract_characters.py` (the `#(\d+)#` marker regex + fountain source). See the originating `PLUGIN_PLAN.md`.

@@ -1,0 +1,20 @@
+{
+  "name": "brock-screenplays",
+  "owner": {
+    "name": "Steve Brock",
+    "email": "stevenedwardbrock@gmail.com"
+  },
+  "description": "Private marketplace for the screenplay production-prep engine.",
+  "plugins": [
+    {
+      "name": "screenplay-prep",
+      "source": ".",
+      "description": "Reusable production-prep engine for feature screenplays: read-only audit agents (continuity, motif, slugline, cast-cue, fact-drift, fidelity, structure, dialogue, rights, pitch) plus reconcile / casting-doc / paged-HTML scripts and six workflow skills. Project-parameterized — each screenplay supplies a PROJECT_PROFILE.md the agents and scripts read.",
+      "version": "0.2.0",
+      "author": { "name": "Steve Brock", "email": "stevenedwardbrock@gmail.com" },
+      "license": "UNLICENSED",
+      "category": "writing",
+      "keywords": ["screenplay", "screenwriting", "film", "production", "audit", "continuity"]
+    }
+  ]
+}
