@@ -1,18 +1,22 @@
 #!/usr/bin/env python3
 """
-extract_characters.py — deterministic character-cue extractor for *Blank Slate*.
+extract_characters.py — deterministic character-cue extractor.
 
-Builds a 1..149 scene index from the EXPLICIT `#N#` slug-line markers in the
-authoritative Fountain source (NOT document-order counting), parses character
-cues per the Fountain spec, and emits a committed dataset (JSON) plus a stdout
-table. READ-ONLY on the script.
+Project-parameterized: reads the Fountain source, the scene-marker regex, whether
+markers are expected, and the locked scene count from PROJECT_PROFILE §0 (defaults
+to Blank Slate when no profile is present). Builds a scene index from the EXPLICIT
+scene markers when the project has them (NOT document-order counting), or numbers
+scenes by slug order for a markerless/unlocked draft. Parses character cues per the
+Fountain spec and emits a committed dataset (JSON) plus a stdout table. READ-ONLY.
 
 Design rules (see Claude Docs/CASTING_TOOL_BRIEF.md):
-- Authoritative source: "Blank Slate Full Script.fountain" (repo root).
-- Scene index comes from `#(\\d+)#` markers on slug lines (1..149).
-- Aliases are NOT merged. Every distinct cue is emitted literally; alias
-  grouping is an editorial decision. A SUGGESTED grouping is reported for
-  convenience only and never applied.
+- Source / marker regex / markers_expected / scene_count come from PROJECT_PROFILE §0.
+- When markers are expected, the scene index comes from those markers (e.g. Blank
+  Slate's `#(\\d+)#`, 1..149); the locked `canonical.scene_count` drives the
+  completeness check. A markerless project is numbered by slug order instead.
+- Aliases are NOT merged. Every distinct cue is emitted literally; alias grouping is
+  an editorial decision. A SUGGESTED grouping is reported for convenience only,
+  filtered to cues that actually appear, and never applied.
 - Flags (not filters): V.O./O.S.-only cues, group/collective cues, single-scene cues.
 
 Usage:
@@ -30,14 +34,40 @@ from pathlib import Path
 # run against another project), else the repo this script lives in (direct runs).
 REPO = Path(os.environ["CLAUDE_PROJECT_DIR"]) if os.environ.get("CLAUDE_PROJECT_DIR") \
     else Path(__file__).resolve().parent.parent
-# NOTE: the source filename is still Blank Slate-specific; parameterizing this from
-# PROJECT_PROFILE §0 source.fountain + scene_markers.regex is the remaining coupling
-# (see PLUGIN_PLAN). Until then this script is the one engine piece not yet generic.
-FOUNTAIN = REPO / "Blank Slate Full Script.fountain"
 OUT_JSON = REPO / "Claude Docs" / "character_scene_index.json"
 
-# A slug line ends with an explicit scene-number marker: ... #N#
-SLUG_MARKER = re.compile(r"#(\d+)#\s*$")
+
+def load_profile():
+    """Resolve §0 source/scene parameters from PROJECT_PROFILE.md:
+      - source.fountain → the cue-parsing source,
+      - scene_markers.expected → True if the script carries `#N#` markers (else
+        scenes are numbered by slug order — a markerless/unlocked draft),
+      - scene_markers.regex → the marker pattern (capture group 1 = the number),
+      - canonical.scene_count → the locked count for the completeness check (None
+        if not locked yet).
+    Falls back to the Blank Slate defaults so the script still runs standalone."""
+    prof = REPO / "Claude Docs" / "PROJECT_PROFILE.md"
+    out = {"fountain": REPO / "Blank Slate Full Script.fountain",
+           "markers_expected": True,
+           "marker_regex": r"#(\d+)#",
+           "scene_count": None}
+    if prof.exists():
+        txt = prof.read_text(encoding="utf-8")
+        m = re.search(r'\bfountain:\s*"([^"]+)"', txt)
+        if m:
+            out["fountain"] = REPO / m.group(1)
+        m = re.search(r'\bexpected:\s*(true|false)\b', txt, re.IGNORECASE)
+        if m:
+            out["markers_expected"] = (m.group(1).lower() == "true")
+        m = re.search(r"\bregex:\s*'([^']+)'", txt) or re.search(r'\bregex:\s*"([^"]+)"', txt)
+        if m:
+            out["marker_regex"] = m.group(1)
+        m = re.search(r'\bscene_count:\s*(\d+)', txt)
+        if m:
+            out["scene_count"] = int(m.group(1))
+    return out
+
+
 # Defensive: also recognize an unmarked slug by its prefix, so we never treat one as a cue.
 SLUG_PREFIX = re.compile(r"^(INT|EXT|EST|INT\.?/EXT\.?|I/E)[.\s/]", re.IGNORECASE)
 # Character-cue extensions to strip down to the base name.
@@ -74,11 +104,11 @@ def is_uppercase_cue(text: str) -> bool:
     return True
 
 
-def parse(fountain_path: Path):
+def parse(fountain_path, marker_re, markers_expected):
     lines = fountain_path.read_text(encoding="utf-8").splitlines()
     n = len(lines)
     current_scene = 0
-    scene_markers = []  # ordered list of scene numbers as encountered
+    scene_markers = []  # ordered list of scene numbers as encountered (may repeat)
     cues = {}           # base name -> record
 
     def blank(i):
@@ -89,14 +119,22 @@ def parse(fountain_path: Path):
         if line == "":
             continue
 
-        m = SLUG_MARKER.search(line)
-        if m:
-            current_scene = int(m.group(1))
-            scene_markers.append(current_scene)
-            continue
-        if SLUG_PREFIX.match(line):
-            # Slug without a marker (shouldn't happen here) — never a cue.
-            continue
+        if markers_expected:
+            m = marker_re.search(line)
+            if m and line[m.end():].strip() == "":
+                # slug line ending with an explicit scene-number marker
+                current_scene = int(m.group(1))
+                scene_markers.append(current_scene)
+                continue
+            if SLUG_PREFIX.match(line):
+                # Slug without a marker — never a cue.
+                continue
+        else:
+            # No markers in this project (unlocked draft): number scenes by slug order.
+            if SLUG_PREFIX.match(line):
+                current_scene += 1
+                scene_markers.append(current_scene)
+                continue
 
         # Candidate character cue: blank line before, non-blank (dialogue) after.
         if not blank(i - 1):
@@ -170,25 +208,34 @@ def parse(fountain_path: Path):
         })
     records.sort(key=lambda r: (r["first_scene"] if r["first_scene"] else 9999, r["cue"]))
 
+    return records, scene_markers
+
+
+def build_dataset(records, scene_markers, profile):
     scene_index = sorted(set(scene_markers))
-    return records, scene_index
-
-
-def build_dataset(records, scene_index):
-    expected = list(range(1, 150))
-    gaps = [s for s in expected if s not in scene_index]
-    dupes = sorted({s for s in scene_index if scene_index.count(s) > 1})
-    suggested = {
-        group: [c for c in members if any(r["cue"] == c for r in records)]
-        for group, members in SUGGESTED_ALIASES.items()
-    }
+    dupes = sorted({s for s in scene_markers if scene_markers.count(s) > 1})
+    expected_count = profile["scene_count"]
+    if expected_count:
+        expected = list(range(1, expected_count + 1))
+        gaps = [s for s in expected if s not in scene_index]
+        complete = (not gaps and not dupes and scene_index == expected)
+    else:
+        gaps, complete = [], None      # no locked count → no completeness claim
+    # Suggested alias groups: convenience only, never applied. Filtered to members
+    # that actually appear as cues, so a different project gets none of these.
+    suggested = {}
+    for group, members in SUGGESTED_ALIASES.items():
+        present = [c for c in members if any(r["cue"] == c for r in records)]
+        if present:
+            suggested[group] = present
     return {
         "_meta": {
-            "source": "Blank Slate Full Script.fountain",
-            "scene_index_method": "explicit #N# slug markers",
+            "source": Path(profile["fountain"]).name,
+            "scene_index_method": ("explicit scene markers" if profile["markers_expected"]
+                                   else "document-order slug lines (no markers)"),
             "scene_count": len(scene_index),
-            "scene_index_complete_1_149": (not gaps and not dupes
-                                           and scene_index == expected),
+            "expected_scene_count": expected_count,
+            "scene_index_complete": complete,
             "missing_scene_numbers": gaps,
             "duplicate_scene_numbers": dupes,
             "distinct_cues": len(records),
@@ -203,8 +250,10 @@ def build_dataset(records, scene_index):
 def print_table(dataset):
     recs = dataset["characters"]
     meta = dataset["_meta"]
-    print(f"\nSCENE INDEX: {meta['scene_count']} scenes, "
-          f"contiguous 1..149 = {meta['scene_index_complete_1_149']}"
+    ec = meta.get("expected_scene_count")
+    print(f"\nSCENE INDEX: {meta['scene_count']} scenes"
+          + (f", contiguous 1..{ec} = {meta['scene_index_complete']}" if ec
+             else " (no locked scene count)")
           + (f"  MISSING={meta['missing_scene_numbers']}" if meta["missing_scene_numbers"] else "")
           + (f"  DUPES={meta['duplicate_scene_numbers']}" if meta["duplicate_scene_numbers"] else ""))
     print(f"DISTINCT CUES: {meta['distinct_cues']}\n")
@@ -234,10 +283,13 @@ def print_table(dataset):
 
 def main():
     check_only = "--check" in sys.argv
-    if not FOUNTAIN.exists():
-        sys.exit(f"ERROR: Fountain source not found at {FOUNTAIN}")
-    records, scene_index = parse(FOUNTAIN)
-    dataset = build_dataset(records, scene_index)
+    profile = load_profile()
+    fountain = profile["fountain"]
+    if not fountain.exists():
+        sys.exit(f"ERROR: Fountain source not found at {fountain}")
+    marker_re = re.compile(profile["marker_regex"])
+    records, scene_markers = parse(fountain, marker_re, profile["markers_expected"])
+    dataset = build_dataset(records, scene_markers, profile)
     print_table(dataset)
     if check_only:
         print("\n--check: dataset NOT written.")
