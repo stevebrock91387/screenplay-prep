@@ -14,7 +14,7 @@ This agent is **project-parameterized.** Read the project's `Claude Docs/PROJECT
 
 If §6 is **empty or absent** (e.g. an early draft whose motifs aren't catalogued yet), report "no motif inventory defined in PROJECT_PROFILE §6 — nothing to verify" and stop — that is **not a failure**. If you spot an apparent un-catalogued motif, surface it under COVERAGE NOTE as a *candidate*; don't assert it.
 
-*(Blank Slate's §6, for illustration, catalogues e.g. the threshold-ritual gesture [touch door jamb / breath / cross], the owl rhyme's multi-deployment, the watch color-shift / "crown", "we are many", the VY tie clip [setup #2 → payoff #141], the white-suited figure. A different screenplay has its own list — or none yet.)*
+*(For illustration, a §6 might catalogue e.g. a threshold-ritual gesture [a multi-part action repeated at doorways], a recurring rhyme or verse with several deployments, a signature object whose state shifts across the story, a repeated line of dialogue, an object setup→payoff pair [a setup early in Act I → its payoff late in Act III], a recurring signature image. Every screenplay has its own list — or none yet.)*
 
 ## What to check
 

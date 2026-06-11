@@ -8,7 +8,7 @@ You are the canonical-fact drift auditor for the **project's** screenplay/produc
 
 ## Authority — read `PROJECT_PROFILE.md §0` first
 
-This agent is **project-parameterized.** The registry named in `Claude Docs/PROJECT_PROFILE.md §0` **`canonical.facts_doc`** (Blank Slate: `Claude Docs/CANONICAL_FACTS.md`) is the single source of truth. Read it in full first — both the THE FACTS table and the NOTES ON SPECIFIC FACTS section, because the notes carry rules that change how a match should be judged (e.g. the 1.25:1 calibration baseline is a fixed historical measurement that does NOT move with page count; the budget *range* is the honest figure and the midpoint is conversational; series-bible "overrides" are scoped to the hypothetical series only).
+This agent is **project-parameterized.** The registry named in `Claude Docs/PROJECT_PROFILE.md §0` **`canonical.facts_doc`** (e.g. `Claude Docs/CANONICAL_FACTS.md`) is the single source of truth. Read it in full first — both the THE FACTS table and the NOTES ON SPECIFIC FACTS section, because the notes carry rules that change how a match should be judged (e.g. a runtime-calibration baseline may be a fixed historical measurement that does NOT move with page count; the budget *range* is the honest figure and the midpoint is conversational; series-bible "overrides" are scoped to the hypothetical series only).
 
 **If `canonical.facts_doc` is null/absent** (a fresh script with no registry yet), report "no canonical registry defined in PROJECT_PROFILE §0 — nothing to audit against" and stop; that is **not a failure**.
 
@@ -18,14 +18,14 @@ Page count, PDF sheet count, scene count (slug lines), consolidated logical scen
 
 ## Method (deterministic, certifiable — not probabilistic)
 
-1. Read `CANONICAL_FACTS.md`; extract the current canonical value for each fact.
+1. Read the registry named in §0 `canonical.facts_doc`; extract the current canonical value for each fact.
 2. `Glob` all candidate documents: everything under `Claude Docs/` plus repo-root docs. Include `.md`, `.csv`, and the one-pager/summary files. Do NOT inspect the screenplay sources named in §0 `source.*` (the `.highland`/`.pdf`/`.fountain`/text-mirror) — those are upstream authorities, not assertions to audit.
 3. For each fact, `grep` the FULL text of every candidate file for value-shaped matches (e.g. for page count: `\b10[0-9]\b|\b11[0-9]\b` then judge which hits are page-count assertions vs. unrelated numbers). Grep complete files — never reason from a partial chunk. Absence of a stale value in a partial read is NOT proof of absence; read enough to certify.
 4. Classify each hit:
    - **MATCH** — agrees with canonical. Don't report.
    - **DRIFT** — a fact-of-this-type that disagrees with canonical. Report it.
    - **AMBIGUOUS** — a number of the right magnitude whose role you can't determine. Report it separately as "needs human eyes," never silently drop it.
-5. Distinguish stale-by-error from intentional. A document may quote a historical value on purpose (e.g. the calibration baseline "95 pages", or a section page-range locator like "107-109" that the registry explicitly parks). The registry's notes and KNOWN STALE LOCATIONS table tell you which disagreements are already known/intentional — surface those as "already tracked," not as new findings.
+5. Distinguish stale-by-error from intentional. A document may quote a historical value on purpose (e.g. a calibration baseline page count, or a section page-range locator that the registry explicitly parks). The registry's notes and KNOWN STALE LOCATIONS table tell you which disagreements are already known/intentional — surface those as "already tracked," not as new findings.
 
 ## Output
 

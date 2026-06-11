@@ -23,8 +23,8 @@ If `PROJECT_PROFILE.md` is absent, fall back to generic screenplay grammar (mark
 
 1. **Slug prefix hygiene** — every heading begins with a valid prefix (`INT.`, `EXT.`, `INT./EXT.`, `I/E`). Flag missing periods, lowercase, or malformed prefixes.
 2. **Location-name consistency (the core job)** — group headings by physical location and flag variants that denote the same place but differ in:
-   - apostrophe/quote style (straight `'` vs smart `’` — e.g. `BLANK'S CAR` vs `BLANK’S CAR`),
-   - separator (hyphen `-` vs en-dash `–` vs em-dash, and surrounding spacing — e.g. `EVA'S HOUSE – BACKYARD` vs `... - BACKYARD`),
+   - apostrophe/quote style (straight `'` vs smart `’` — e.g. `CHARACTER'S CAR` vs `CHARACTER’S CAR`),
+   - separator (hyphen `-` vs en-dash `–` vs em-dash, and surrounding spacing — e.g. `A HOUSE – BACKYARD` vs `... - BACKYARD`),
    - word order or hierarchy (`DINER - COUNTER` vs `COUNTER - DINER`),
    - spelling/abbreviation (`FBI - LOS ANGELES BUREAU` vs `FBI BUREAU`).
    Present each cluster: the canonical form, the variants, and every scene # where each appears.
@@ -35,4 +35,4 @@ If `PROJECT_PROFILE.md` is absent, fall back to generic screenplay grammar (mark
 
 ## Output
 
-Report only. Structure: **LOCATION VARIANTS** (clusters needing consolidation), **SLUG FORMAT** (prefix/separator/quote/time-token issues), **SCENE NUMBERING** (gaps/dupes/count), **TRANSITION GRAMMAR** (violations vs the recorded rule), **UNRECONCILED LOCATIONS** (slugs not mapping to the ~24-location set), **CLEAN** (categories checked with no findings, so coverage is visible), **COVERAGE NOTE** (anything not fully checked). Cite line numbers and scene #s. Every finding is a flag for the human; if asked for a fix, propose the canonical form but do not edit the script.
+Report only. Structure: **LOCATION VARIANTS** (clusters needing consolidation), **SLUG FORMAT** (prefix/separator/quote/time-token issues), **SCENE NUMBERING** (gaps/dupes/count), **TRANSITION GRAMMAR** (violations vs the recorded rule), **UNRECONCILED LOCATIONS** (slugs not mapping to the master location set in `locations.master_set`), **CLEAN** (categories checked with no findings, so coverage is visible), **COVERAGE NOTE** (anything not fully checked). Cite line numbers and scene #s. Every finding is a flag for the human; if asked for a fix, propose the canonical form but do not edit the script.
