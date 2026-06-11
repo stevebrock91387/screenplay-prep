@@ -36,7 +36,8 @@ transition_policy: {}                   # project law, NOT screenplay law — le
 reference_docs:
   handoff: "Claude Docs/HANDOFF.md"
   revision_notes: "Claude Docs/SCRIPT_REVISION_NOTES.md"
-  scene_csv: null
+  scene_csv: null                       # reconcile.py parse baseline; null until a derived CSV exists
+  runtime_model: null                   # reconcile.py target doc; null if no Runtime Model
 
 cast_registry: []                       # cue↔roster reconciliation files; [] until a registry exists
 

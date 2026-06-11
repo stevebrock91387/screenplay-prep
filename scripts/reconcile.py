@@ -45,25 +45,40 @@ from pathlib import Path
 REPO_ROOT = Path(os.environ["CLAUDE_PROJECT_DIR"]) if os.environ.get("CLAUDE_PROJECT_DIR") \
     else Path(__file__).resolve().parent.parent
 
-P = {
-    "highland":       REPO_ROOT / "Blank Slate Full Script.highland",
-    "pdf":            REPO_ROOT / "Blank Slate Full Script.pdf",
-    # script_text is this script's PARSE BASELINE — the scene_csv keys every scene
-    # to its line_start/line_end, so its line numbers must stay stable. It is NOT a
-    # verbatim copy of the live screenplay: the pre-commit hook intentionally does
-    # NOT refresh it (that hook maintains the body-only .fountain).
-    # Refreshing this file means re-running reconcile.py --apply so scene_csv's line
-    # numbers are recomputed in lock-step. Do NOT hand-edit it or auto-copy text.md
-    # into it — either silently desyncs the 82-scene CSV. For an always-current
-    # plain-text copy of the script, use the tracked .fountain instead.
-    "script_text":    REPO_ROOT / "Claude Docs" / "Blank_Slate_Full_Script_text.md",
-    "scene_csv":      REPO_ROOT / "Claude Docs" / "blank_slate_scenes.csv",
-    "runtime_model":  REPO_ROOT / "Claude Docs" / "Blank_Slate_Runtime_Model.md",
-    "runtime_py":     REPO_ROOT / "Claude Docs" / "runtime_model.py",
-    "runtime_config": REPO_ROOT / "Claude Docs" / "runtime_config.json",
-    "canonical":      REPO_ROOT / "Claude Docs" / "CANONICAL_FACTS.md",
-    "script_state":   REPO_ROOT / ".script-state",
-}
+def _load_paths():
+    """Resolve every working file from PROJECT_PROFILE §0 (source.*, reference_docs.*,
+    canonical.facts_doc). With a profile present, paths come from it and a key that is
+    null/absent resolves to None — so a fresh project that hasn't set up a scene CSV /
+    Runtime Model degrades gracefully (main() then reports 'nothing to reconcile').
+    With NO profile, fall back to the Blank Slate filenames so the script still runs
+    standalone in this repo. `runtime_config` / `script_state` use generic names.
+
+    NOTE on `script_text`: it is the PARSE BASELINE — the scene CSV keys every scene to
+    its line_start/line_end, so its line numbers must stay stable. It is NOT a verbatim
+    live copy (the hook maintains the body-only .fountain). Refreshing it means re-running
+    reconcile.py --apply so the CSV's line numbers recompute in lock-step."""
+    prof = REPO_ROOT / "Claude Docs" / "PROJECT_PROFILE.md"
+    txt = prof.read_text(encoding="utf-8") if prof.exists() else ""
+    has_profile = bool(txt)
+
+    def res(key, bs_default):
+        if not has_profile:
+            return REPO_ROOT / bs_default                  # legacy standalone (no profile)
+        m = re.search(rf'\b{key}:\s*"([^"]+)"', txt)
+        return (REPO_ROOT / m.group(1)) if m else None     # §0 value, or None if null/absent
+
+    return {
+        "highland":       res("highland", "Blank Slate Full Script.highland"),
+        "pdf":            res("pdf", "Blank Slate Full Script.pdf"),
+        "script_text":    res("text_mirror", "Claude Docs/Blank_Slate_Full_Script_text.md"),
+        "scene_csv":      res("scene_csv", "Claude Docs/blank_slate_scenes.csv"),
+        "runtime_model":  res("runtime_model", "Claude Docs/Blank_Slate_Runtime_Model.md"),
+        "canonical":      res("facts_doc", "Claude Docs/CANONICAL_FACTS.md"),
+        "runtime_config": REPO_ROOT / "Claude Docs" / "runtime_config.json",   # generic name
+        "script_state":   REPO_ROOT / ".script-state",                         # generic
+    }
+
+P = _load_paths()
 
 TABLE_READ_RATIO = 1.25
 
@@ -108,6 +123,8 @@ def fmt_mmss(total_min):
 # -------------------- Preflight --------------------
 def preflight():
     for k in ("highland", "pdf", "script_state"):
+        if P[k] is None:
+            return False, f"PROJECT_PROFILE §0 does not define a path for '{k}'"
         if not P[k].exists():
             return False, f"missing: {P[k].name}"
     with zipfile.ZipFile(P["highland"]) as z:
@@ -727,6 +744,21 @@ def main():
     p.add_argument("--approve-stale", type=Path, help="JSON file with approved stale-ref fixes (list of file/line dicts)")
     args = p.parse_args()
 
+    # --- 0. Is this project set up for a reconcile baseline at all? ---
+    # reconcile.py reconciles a derived scene CSV + Runtime Model (+ runtime config)
+    # against the committed PDF — a MATURE project's apparatus. A fresh/unlocked draft
+    # (no scene CSV / Runtime Model configured in §0) has nothing to reconcile; exit
+    # cleanly rather than erroring on missing files. This is the graceful degradation
+    # that lets the script live in the screenplay-prep plugin and run on any project.
+    not_ready = [k for k in ("scene_csv", "runtime_model", "runtime_config")
+                 if P[k] is None or not P[k].exists()]
+    if not_ready:
+        print(bold("No reconcile baseline for this project."))
+        print("  reconcile.py reconciles a derived scene CSV + Runtime Model against the PDF;")
+        print(f"  not configured/present (PROJECT_PROFILE §0): {', '.join(not_ready)}.")
+        print("  Nothing to do — expected for a fresh or unlocked draft. (Not an error.)")
+        sys.exit(0)
+
     # --- 1. Preflight ---
     heading("1. Preflight")
     ok, msg = preflight()
@@ -808,17 +840,19 @@ def main():
 
     # --- 6. CANONICAL_FACTS audit ---
     heading("6. CANONICAL_FACTS audit")
-    canonical_rows = parse_canonical_facts()
-    main_scene_count = sum(1 for a in assignments if "." not in a["scene_id"])
-    drift = audit_canonical_facts(canonical_rows, canonical_pages, model_runtime_min,
-                                   len(sluglines), main_scene_count)
-    # Drift values may be reported as raw H:MM via fmt_min; ensure consistent format
-    # (fix already done — keeping audit using fmt_min which now returns H:MM)
-    if drift:
-        for d in drift:
-            print(yellow(f"  drift: {d['fact']}: registry='{d.get('registry')}' expected='{d['expected']}'"))
+    if P["canonical"] is None or not P["canonical"].exists():
+        drift = []
+        print(yellow("  skipped — no canonical facts doc configured in §0 (canonical.facts_doc)."))
     else:
-        print(green("  ✓ all checked rows match their sources"))
+        canonical_rows = parse_canonical_facts()
+        main_scene_count = sum(1 for a in assignments if "." not in a["scene_id"])
+        drift = audit_canonical_facts(canonical_rows, canonical_pages, model_runtime_min,
+                                       len(sluglines), main_scene_count)
+        if drift:
+            for d in drift:
+                print(yellow(f"  drift: {d['fact']}: registry='{d.get('registry')}' expected='{d['expected']}'"))
+        else:
+            print(green("  ✓ all checked rows match their sources"))
 
     # --- 7. Stale page-count grep ---
     heading("7. Stale page-count references")
@@ -873,9 +907,12 @@ def main():
                                  canonical_pages, model_runtime_min)
     print(green(f"  ✓ updated {P['runtime_model'].relative_to(REPO_ROOT)} (headers, TOTALS, note, model figure)"))
 
-    # 3. Write CANONICAL_FACTS
-    write_canonical_updates(canonical_pages, model_runtime_min)
-    print(green(f"  ✓ updated {P['canonical'].relative_to(REPO_ROOT)} (page count, table-read, model estimate)"))
+    # 3. Write CANONICAL_FACTS (only if the project has one)
+    if P["canonical"] is not None and P["canonical"].exists():
+        write_canonical_updates(canonical_pages, model_runtime_min)
+        print(green(f"  ✓ updated {P['canonical'].relative_to(REPO_ROOT)} (page count, table-read, model estimate)"))
+    else:
+        print(yellow("  (no canonical facts doc — skipped)"))
 
     # 4. Stale-ref fixes
     if stale and args.approve_stale and args.approve_stale.exists():
