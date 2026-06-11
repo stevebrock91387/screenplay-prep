@@ -47,11 +47,10 @@ REPO_ROOT = Path(os.environ["CLAUDE_PROJECT_DIR"]) if os.environ.get("CLAUDE_PRO
 
 def _load_paths():
     """Resolve every working file from PROJECT_PROFILE §0 (source.*, reference_docs.*,
-    canonical.facts_doc). With a profile present, paths come from it and a key that is
-    null/absent resolves to None — so a fresh project that hasn't set up a scene CSV /
-    Runtime Model degrades gracefully (main() then reports 'nothing to reconcile').
-    With NO profile, fall back to the Blank Slate filenames so the script still runs
-    standalone in this repo. `runtime_config` / `script_state` use generic names.
+    canonical.facts_doc). A key that is null/absent — or no profile at all — resolves
+    to None, so a project that hasn't set up a scene CSV / Runtime Model degrades
+    gracefully (main() then reports 'nothing to reconcile'). `runtime_config` /
+    `script_state` use generic (non-project) names.
 
     NOTE on `script_text`: it is the PARSE BASELINE — the scene CSV keys every scene to
     its line_start/line_end, so its line numbers must stay stable. It is NOT a verbatim
@@ -59,21 +58,18 @@ def _load_paths():
     reconcile.py --apply so the CSV's line numbers recompute in lock-step."""
     prof = REPO_ROOT / "Claude Docs" / "PROJECT_PROFILE.md"
     txt = prof.read_text(encoding="utf-8") if prof.exists() else ""
-    has_profile = bool(txt)
 
-    def res(key, bs_default):
-        if not has_profile:
-            return REPO_ROOT / bs_default                  # legacy standalone (no profile)
+    def res(key):
         m = re.search(rf'\b{key}:\s*"([^"]+)"', txt)
-        return (REPO_ROOT / m.group(1)) if m else None     # §0 value, or None if null/absent
+        return (REPO_ROOT / m.group(1)) if m else None     # §0 value, or None if null/absent/no-profile
 
     return {
-        "highland":       res("highland", "Blank Slate Full Script.highland"),
-        "pdf":            res("pdf", "Blank Slate Full Script.pdf"),
-        "script_text":    res("text_mirror", "Claude Docs/Blank_Slate_Full_Script_text.md"),
-        "scene_csv":      res("scene_csv", "Claude Docs/blank_slate_scenes.csv"),
-        "runtime_model":  res("runtime_model", "Claude Docs/Blank_Slate_Runtime_Model.md"),
-        "canonical":      res("facts_doc", "Claude Docs/CANONICAL_FACTS.md"),
+        "highland":       res("highland"),
+        "pdf":            res("pdf"),
+        "script_text":    res("text_mirror"),
+        "scene_csv":      res("scene_csv"),
+        "runtime_model":  res("runtime_model"),
+        "canonical":      res("facts_doc"),
         "runtime_config": REPO_ROOT / "Claude Docs" / "runtime_config.json",   # generic name
         "script_state":   REPO_ROOT / ".script-state",                         # generic
     }
@@ -561,14 +557,13 @@ def git_ls_files():
                          capture_output=True, text=True, check=True)
     return res.stdout.splitlines()
 
+# Exclude upstream sources + this script + the historical narrative from the stale-grep.
+# The screenplay binaries and the registry come from §0 (P[]); HANDOFF is the convention.
 EXCLUDE_FROM_GREP = {
     ".script-state",
-    "Blank Slate Full Script.highland",
-    "Blank Slate Full Script.pdf",
     "scripts/reconcile.py",
-    "Claude Docs/CANONICAL_FACTS.md",  # registry itself; audited separately
     "Claude Docs/HANDOFF.md",           # historical narrative deliberately contains old values
-}
+} | {str(P[k].relative_to(REPO_ROOT)) for k in ("highland", "pdf", "canonical") if P[k] is not None}
 
 TEXT_EXTS = {".md", ".txt", ".csv", ".json", ".py", ".sh", ".js", ".swift"}
 

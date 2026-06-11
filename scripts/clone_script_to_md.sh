@@ -10,7 +10,7 @@
 # Project-parameterized: resolves the .highland + .fountain filenames from
 # PROJECT_PROFILE §0 (source.highland / source.fountain), and the project root from
 # $CLAUDE_PROJECT_DIR when set (so it works bundled in the screenplay-prep plugin).
-# Falls back to the Blank Slate filenames if there's no profile.
+# Falls back to the first *.highland in the project root if there's no profile.
 #
 # Why not a background "on save" agent? macOS TCC denies launchd agents access to
 # iCloud Drive (~/Library/Mobile Documents), so a WatchPaths daemon can't read/write
@@ -23,8 +23,8 @@ PROFILE="$REPO/Claude Docs/PROJECT_PROFILE.md"
 # Pull a quoted §0 value for a key (e.g. highland, fountain); empty if absent/null.
 profile_val() { [ -f "$PROFILE" ] && grep -m1 -E "^[[:space:]]*$1:[[:space:]]*\"" "$PROFILE" 2>/dev/null | sed -E "s/^[^\"]*\"([^\"]+)\".*/\1/"; }
 
-HL_NAME="$(profile_val highland)";  HL_NAME="${HL_NAME:-Blank Slate Full Script.highland}"
-FT_NAME="$(profile_val fountain)";  FT_NAME="${FT_NAME:-Blank Slate Full Script.fountain}"
+HL_NAME="$(profile_val highland)"; [ -z "$HL_NAME" ] && HL_NAME="$(cd "$REPO" && ls -1 *.highland 2>/dev/null | head -1)"
+FT_NAME="$(profile_val fountain)"; [ -z "$FT_NAME" ] && FT_NAME="${HL_NAME%.highland}.fountain"
 HL="$REPO/$HL_NAME"
 FOUNTAIN="$REPO/$FT_NAME"
 

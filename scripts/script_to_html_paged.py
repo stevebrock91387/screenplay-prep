@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Blank Slate — Fountain to PAGINATED screenplay HTML.
+"""Fountain to PAGINATED screenplay HTML.
 Faithful FNPaginator.m port for monospace Courier (deterministic heights).
 Responsive via CSS container queries with em-based sizing — whole layout scales together, no JS."""
 import argparse, re, html, math

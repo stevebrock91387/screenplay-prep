@@ -3,16 +3,16 @@
 extract_characters.py — deterministic character-cue extractor.
 
 Project-parameterized: reads the Fountain source, the scene-marker regex, whether
-markers are expected, and the locked scene count from PROJECT_PROFILE §0 (defaults
-to Blank Slate when no profile is present). Builds a scene index from the EXPLICIT
-scene markers when the project has them (NOT document-order counting), or numbers
-scenes by slug order for a markerless/unlocked draft. Parses character cues per the
-Fountain spec and emits a committed dataset (JSON) plus a stdout table. READ-ONLY.
+markers are expected, and the locked scene count from PROJECT_PROFILE §0 (neutral
+defaults when no profile is present). Builds a scene index from the EXPLICIT scene
+markers when the project has them (NOT document-order counting), or numbers scenes by
+slug order for a markerless/unlocked draft. Parses character cues per the Fountain
+spec and emits a committed dataset (JSON) plus a stdout table. READ-ONLY.
 
 Design rules (see Claude Docs/CASTING_TOOL_BRIEF.md):
 - Source / marker regex / markers_expected / scene_count come from PROJECT_PROFILE §0.
-- When markers are expected, the scene index comes from those markers (e.g. Blank
-  Slate's `#(\\d+)#`, 1..149); the locked `canonical.scene_count` drives the
+- When markers are expected, the scene index comes from those markers (e.g. a
+  trailing `#(\\d+)#` token); the locked `canonical.scene_count` drives the
   completeness check. A markerless project is numbered by slug order instead.
 - Aliases are NOT merged. Every distinct cue is emitted literally; alias grouping is
   an editorial decision. A SUGGESTED grouping is reported for convenience only,
@@ -45,9 +45,11 @@ def load_profile():
       - scene_markers.regex → the marker pattern (capture group 1 = the number),
       - canonical.scene_count → the locked count for the completeness check (None
         if not locked yet).
-    Falls back to the Blank Slate defaults so the script still runs standalone."""
+    Falls back to neutral defaults so the script still runs standalone."""
     prof = REPO / "Claude Docs" / "PROJECT_PROFILE.md"
-    out = {"fountain": REPO / "Blank Slate Full Script.fountain",
+    # Neutral defaults (used only with NO profile): the first *.fountain in the repo
+    # root, markers expected, trailing #N# pattern.
+    out = {"fountain": next(iter(sorted(REPO.glob("*.fountain"))), REPO / "script.fountain"),
            "markers_expected": True,
            "marker_regex": r"#(\d+)#",
            "scene_count": None}
@@ -87,12 +89,11 @@ GROUP_TOKENS = ("GROUP", "PARTICIPANTS", "MEMBERS", "COHORT", "STUDENTS",
                 "CROWD", "EVERYONE", "ALL", "BOTH", "CLASS", "TOGETHER", "AGENTS")
 
 # Convenience only — reported, never applied. Editorial merge is the writer's call.
-SUGGESTED_ALIASES = {
-    "RYAN SYSTEM (one actor)": ["RYAN", "RYAN KING", "JAMES", "MR. BLANK", "BLANK",
-                                 "SIOBHAN", "YOUNG RYAN", "JAMES/BLANK"],
-    "ROBERTO (staged-reveal aliases)": ["ROBERTO", "ARMANI", "TORCIDO"],
-    "MARGARET (watch for 'MEGHAN' continuity slip)": ["MARGARET", "MEG", "MEGHAN"],
-}
+# Empty by default: alias systems are per-screenplay and live in PROJECT_PROFILE §5
+# (read by cast-cue-linter) + the casting editorial JSON, not hardcoded here. A project
+# may add local hints in this shape if useful:
+#   SUGGESTED_ALIASES = {"<group label>": ["CUE_A", "CUE_B", ...]}
+SUGGESTED_ALIASES = {}
 
 
 def is_uppercase_cue(text: str) -> bool:

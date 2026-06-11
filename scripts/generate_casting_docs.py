@@ -3,8 +3,8 @@
 generate_casting_docs.py — casting / table-read document generator.
 
 Project-parameterized: reads the project name, canonical scene count, and casting
-CSV from PROJECT_PROFILE §0 (load_profile()); defaults to Blank Slate only when no
-profile is present. Reference instance: Blank Slate.
+CSV from PROJECT_PROFILE §0 (load_profile()). Falls back to neutral defaults only when
+no profile is present.
 
 Reads two inputs:
   (a) Claude Docs/character_scene_index.json  — the extractor dataset (mechanical
@@ -36,7 +36,7 @@ flagged, not invented):
                                    Role | Brief description | empty "Actor request"
                                    column for WMM to fill in the reader. One row
                                    per role (one-actor systems sharing a display,
-                                   e.g. the Ryan system, collapse to one row).
+                                   e.g. an alter system, collapse to one row).
 
 Bootstrap (run once so the editorial file exists, pre-filled from the existing
 casting CSV — existing-doc data, not invented; blanks left as explicit TODO):
@@ -66,26 +66,25 @@ OUT_DIR = DOCS / "generated"
 MD2HTML = REPO / "Conversion Tools" / "md2html.js"
 HTML2PDF = REPO / "Conversion Tools" / "html2pdf.swift"
 
-# Per-screenplay parameters. Defaults are the Blank Slate values; load_profile()
-# overrides them from PROJECT_PROFILE §0 at startup (project name → doc titles,
-# canonical.scene_count → LAST_SCENE, the *_Casting_Breakdown.csv in cast_registry
-# → SOURCE_CSV). Module globals so the title helpers and the tableread default
-# bound read the resolved values. A repo with no PROJECT_PROFILE keeps the defaults.
-PROJECT_NAME = "Blank Slate"
-TITLE_CAPS = "BLANK SLATE"
-LAST_SCENE = 149
-SOURCE_CSV = DOCS / "Blank_Slate_Casting_Breakdown.csv"
+# Per-screenplay parameters. Neutral defaults; load_profile() overrides them from
+# PROJECT_PROFILE §0 at startup (project name → doc titles, canonical.scene_count →
+# LAST_SCENE, the *_Casting_Breakdown.csv in cast_registry → SOURCE_CSV). Module
+# globals so the title helpers and the tableread default bound read the resolved
+# values. A repo with no PROJECT_PROFILE keeps these neutral defaults.
+PROJECT_NAME = "Untitled Screenplay"
+TITLE_CAPS = "UNTITLED SCREENPLAY"
+LAST_SCENE = None
+SOURCE_CSV = None
 
 
 def load_profile():
     """Resolve per-screenplay parameters from PROJECT_PROFILE §0 into the module
     globals. Tolerant per key:
-      - project name: from the H1 header; default 'Blank Slate'.
+      - project name: from the H1 header; falls back to the neutral default.
       - scene_count: `canonical.scene_count` if a number; None if null/absent (a
-        fresh/unlocked draft) — main() then derives it from the dataset, never a
-        Blank Slate fallback.
+        fresh/unlocked draft) — main() then derives it from the dataset.
       - SOURCE_CSV: the first *_Casting_Breakdown.csv in §0 cast_registry; None if
-        the registry has none (no CSV to prefill from — not a Blank Slate fallback).
+        the registry has none (no CSV to prefill from).
     Returns the resolved values (scene_count/source_csv may be None)."""
     global PROJECT_NAME, TITLE_CAPS, LAST_SCENE, SOURCE_CSV
     scene_count = None
@@ -144,8 +143,8 @@ TITLES = {"DETECTIVE", "DR", "DOCTOR", "AGENT", "OFFICER", "MR", "MRS", "MS",
 def csv_match(cue, csv_rows):
     """CSV->cue match, precision-first:
       1. exact role / role-minus-parenthetical / exact slash-segment, then
-      2. cue == first word of a slash-segment (catches RYAN -> 'RYAN KING /
-         JAMES / ...'), EXCEPT generic group tokens (so 'GROUP' never grabs
+      2. cue == first word of a slash-segment (catches 'LEAD' -> 'LEAD /
+         ALIAS / ...'), EXCEPT generic group tokens (so 'GROUP' never grabs
          'Group Leader')."""
     n = norm(cue)
     for row in csv_rows:
@@ -286,8 +285,8 @@ def md_table(headers, rows):
 
 def collapse_by_display(dataset, editorial):
     """One entry per unique editorial display, merging the scene data of cues
-    that share it — BLANK+JAMES = the one James/Mr. Blank alter; ROBERTO+ARMANI =
-    Roberto. Keeps the first cue's editorial fields."""
+    that share it (e.g. two cues for one actor's alter, or a cover-name + real-name
+    pair, collapse to one row). Keeps the first cue's editorial fields."""
     by_disp, order = {}, []
     for rec in dataset["characters"]:
         e = ed_role(editorial, rec["cue"])
@@ -541,7 +540,7 @@ def main():
 
     dataset = load_dataset()
     # Authoritative scene count: profile canonical.scene_count, else the extractor's
-    # own _meta.scene_count (never a Blank Slate fallback for a fresh project).
+    # own _meta.scene_count (derived from the project's own dataset, never guessed).
     LAST_SCENE = prof["scene_count"] or dataset.get("_meta", {}).get("scene_count") or LAST_SCENE
 
     if args.bootstrap_editorial:
