@@ -1,6 +1,6 @@
 # screenplay-prep
 
-A reusable Claude Code **plugin** that packages the screenplay production-prep engine — read-only audit agents plus the reconcile / casting-doc / paged-HTML scripts — so it works turnkey across every screenplay you own. The reference instance it was extracted from is *Blank Slate*.
+A reusable Claude Code **plugin** that packages a screenplay production-prep engine — read-only audit agents plus the reconcile / casting-doc / paged-HTML scripts — so it works turnkey across every screenplay you own. Each screenplay supplies a `PROJECT_PROFILE.md` the agents and scripts read; nothing here is tied to one script.
 
 ## The split
 
@@ -41,4 +41,4 @@ claude --plugin-dir "/path/to/screenplay-prep"
 
 ## Status (v0.2.0)
 
-Skeleton + the six skills (`new` / `init` / `reconcile` / `audit` / `html` / `handoff`) + a private marketplace (`brock-screenplays`). Agents + scripts are the parameterized versions proven on Blank Slate (no-regression) and a Family Business smoke test (adapts cleanly — absent capabilities scope the run instead of failing). Verified: headless `--plugin-dir` load (15 agents + 6 skills register under `screenplay-prep:`), and the full `marketplace add → install screenplay-prep@brock-screenplays → list` cycle (in an isolated config). **Known bootstrap duplication:** the agents/scripts here are copies of the Blank Slate repo's `.claude/agents/` + `scripts/`; once this plugin is installed, that repo's local copies become redundant and can be retired. The one remaining hardcoding is `extract_characters.py` (the `#(\d+)#` marker regex + fountain source). See the originating `PLUGIN_PLAN.md`.
+15 read-only audit agents + 6 skills (`new` / `init` / `reconcile` / `audit` / `html` / `handoff`) + the engine scripts, behind a private marketplace (`brock-screenplays`). Every agent and script is **project-parameterized** — it reads the per-screenplay parameters from `PROJECT_PROFILE §0` and degrades gracefully where a project hasn't set something up (an absent capability scopes a run, it doesn't fail it). Proven across two real screenplays (a mature, numbered, locked draft and an early, unnumbered one). Verified: headless `--plugin-dir` load (15 agents + 6 skills register under `screenplay-prep:`) and the full `marketplace add → install → list` cycle.

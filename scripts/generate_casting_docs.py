@@ -135,7 +135,7 @@ def flat(s) -> str:
 
 GENERIC_FIRSTWORD = {"GROUP", "PARTICIPANTS", "MEMBERS", "ALL", "BOTH", "CROWD",
                      "EVERYONE", "CLASS", "STUDENTS", "COHORT", "AGENTS", "TOGETHER"}
-# Honorifics that prefix a role so the cue is a non-first word (DETECTIVE EUGENE PHLAT).
+# Honorifics that prefix a role so the cue is a non-first word (e.g. DETECTIVE FIRST LAST).
 TITLES = {"DETECTIVE", "DR", "DOCTOR", "AGENT", "OFFICER", "MR", "MRS", "MS",
           "CAPTAIN", "SERGEANT", "LIEUTENANT", "CHIEF", "PROFESSOR", "NURSE", "SPECIAL"}
 
@@ -161,8 +161,8 @@ def csv_match(cue, csv_rows):
                 words = seg.strip().split()
                 if words and norm(words[0]) == n:
                     return row
-        # title-prefixed single roles: cue is a non-title word (EUGENE in
-        # 'DETECTIVE EUGENE PHLAT'). Gated on a known honorific to stay precise.
+        # title-prefixed single roles: cue is a non-title word (the surname in
+        # 'DETECTIVE FIRST LAST'). Gated on a known honorific to stay precise.
         for row in csv_rows:
             role = row.get("Role", "")
             if "/" in role:

@@ -285,12 +285,12 @@ def derive_new_headers(headers, sluglines, pdf_pages, total_script_lines):
 # -------------------- Reconcile anchors (PROJECT_PROFILE §0) --------------------
 # Some Runtime Model section boundaries are anchored to dramatic content, not to the
 # line-position heuristic. derive_new_headers() always wants to re-anchor them to the
-# nearest slug, which ejects the anchored scene into the neighbouring section (e.g.
-# HQ Raid must keep logical scene 46, whose line_start sits one line below the curated
-# header start; Bishop must keep scene 72). Historically the writer hand-restored these
-# after every --apply. These helpers read the anchors from PROJECT_PROFILE §0 and hold
-# them automatically — see PROJECT_PROFILE §9. A script with no anchors (fresh project)
-# gets an empty list and all of this is a no-op.
+# nearest slug, which can eject the anchored scene into the neighbouring section (e.g.
+# when a section must keep a logical scene whose line_start sits just below the curated
+# header start). Historically that meant a hand-restore after every --apply. These
+# helpers read the anchors from PROJECT_PROFILE §0 and hold them automatically — see
+# PROJECT_PROFILE §9. A script with no anchors (fresh project) gets an empty list and
+# all of this is a no-op.
 def load_reconcile_anchors():
     """Read §0 reconcile_anchors from PROJECT_PROFILE.md. Returns a list of
     {"section": str, "scene": str}; [] if the profile or the key is absent (not an
@@ -468,34 +468,48 @@ def compute_runtime_minutes(assignments):
     ratios = {k: v["ratio"] for k, v in cfg["categories"].items()}
     return sum((a["new_pages"] or 0) * ratios.get(a["category"], 1.0) for a in assignments)
 
+def _runtime_section_labels():
+    """The per-section row labels in the Runtime Model's TOTALS table, in order —
+    data-driven so no project's section names are hardcoded here. Each section header
+    maps to the TOTALS row at the same position. Empty if the table can't be read."""
+    text = P["runtime_model"].read_text() if (P["runtime_model"] and P["runtime_model"].exists()) else ""
+    labels, in_table = [], False
+    for ln in text.splitlines():
+        s = ln.strip()
+        if s.startswith("| Section") or (s.startswith("|") and "Estimated Minutes" in s):
+            in_table = True
+            continue
+        if in_table:
+            if s.startswith("|---") or s.startswith("| ---"):
+                continue
+            if not s.startswith("|") or "**TOTAL" in s or s.lower().startswith("| **total"):
+                break
+            m = re.match(r"\|\s*([^|]+?)\s*\|", s)
+            if m:
+                labels.append(m.group(1).strip())
+    return labels
+
 def compute_section_totals(assignments, headers, anchors=None):
     cfg = json.loads(P["runtime_config"].read_text())
     ratios = {k: v["ratio"] for k, v in cfg["categories"].items()}
-    short = {
-        "### Act One Setup":                       "Act One Setup",
-        "### Act One Mid":                         "Act One Mid",
-        "### Act One Late":                        "Act One Late",
-        "### Act Two Glass Ceiling":               "Glass Ceiling",
-        "### Act Two Sierra Reveal":               "Sierra Reveal",
-        "### Act Two HQ Raid":                     "HQ Raid",
-        "### Act Three Berkeley Flashback":        "Berkeley",
-        "### Act Three Bishop / S2 Investigation": "Bishop / S2 Investigation",
-        "### Act Three Tahoe Finale":              "Tahoe Finale",
-        "### Post-Credit":                         "Post-Credit",
-    }
+    # Section label = the Runtime Model TOTALS row at the same position (data-driven);
+    # fall back to the header text (minus the ### marker) if the table is shorter.
+    row_labels = _runtime_section_labels()
+    def short_label(i, h):
+        return row_labels[i] if i < len(row_labels) else h["label"].lstrip("#").strip()
     # PROJECT_PROFILE §0 reconcile_anchors: force the named logical scene into its
-    # section's total regardless of line-boundary math. (HQ Raid's curated total
-    # counts scene 46 even though its line_start falls one line below the header
-    # start; without this the bucketer would mis-assign it — see §9.)
-    forced = {}  # scene_id -> section short-label
+    # section's total regardless of line-boundary math (the anchored scene's line_start
+    # may fall just below the curated header start; without this the bucketer would
+    # mis-assign it — see §9).
+    forced = {}  # scene_id -> section label
     if anchors:
-        labels = {short.get(h["label"], h["label"]) for h in headers}
+        labels = {short_label(i, h) for i, h in enumerate(headers)}
         for anc in anchors:
             tgt = next((lbl for lbl in labels if anc["section"] in lbl or lbl in anc["section"]), anc["section"])
             forced[str(anc["scene"])] = tgt
     out = []
-    for h in headers:
-        label = short.get(h["label"], h["label"])
+    for i, h in enumerate(headers):
+        label = short_label(i, h)
         ls, le = h["new_line_start"], h["new_line_end"]
         scenes = [a for a in assignments
                   if forced.get(a["scene_id"]) == label
