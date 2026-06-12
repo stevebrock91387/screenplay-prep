@@ -1,6 +1,6 @@
 {
   "name": "screenplay-prep",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Reusable production-prep engine for feature screenplays: read-only audit agents (continuity, motif, slugline, cast-cue, fact-drift, fidelity, structure, dialogue, rights, pitch) plus reconcile / casting-doc / paged-HTML scripts. Project-parameterized — every screenplay supplies a PROJECT_PROFILE.md the agents and scripts read.",
   "author": { "name": "Steve Brock" },
   "keywords": ["screenplay", "screenwriting", "film", "production", "audit", "continuity"]

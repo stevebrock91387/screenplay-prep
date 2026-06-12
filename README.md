@@ -25,10 +25,10 @@ This repo is also its own marketplace (`brock-screenplays`, declared in `.claude
 ```bash
 claude plugin marketplace add "/path/to/screenplay-prep"   # local path, GitHub repo, or git URL
 claude plugin install screenplay-prep@brock-screenplays
-claude plugin list                                          # verify: enabled, v0.2.0
+claude plugin list                                          # verify: enabled, v0.3.0
 ```
 
-Or from inside a session: `/plugin marketplace add <path>` then `/plugin install screenplay-prep@brock-screenplays`. Choose scope at install (`--scope user` for every project, `--scope project` to commit per-repo). Inventory: 6 skills + 15 agents, ~2.1k always-on tokens.
+Or from inside a session: `/plugin marketplace add <path>` then `/plugin install screenplay-prep@brock-screenplays`. Choose scope at install (`--scope user` for every project, `--scope project` to commit per-repo). Inventory: 7 skills + 15 agents, ~2.1k always-on tokens.
 
 ## Local-dev test (no install)
 
@@ -39,6 +39,6 @@ claude --plugin-dir "/path/to/screenplay-prep"
 #   /screenplay-prep:audit all
 ```
 
-## Status (v0.2.0)
+## Status (v0.3.0)
 
-15 read-only audit agents + 6 skills (`new` / `init` / `reconcile` / `audit` / `html` / `handoff`) + the engine scripts, behind a private marketplace (`brock-screenplays`). Every agent and script is **project-parameterized** — it reads the per-screenplay parameters from `PROJECT_PROFILE §0` and degrades gracefully where a project hasn't set something up (an absent capability scopes a run, it doesn't fail it). Proven across two real screenplays (a mature, numbered, locked draft and an early, unnumbered one). Verified: headless `--plugin-dir` load (15 agents + 6 skills register under `screenplay-prep:`) and the full `marketplace add → install → list` cycle.
+15 read-only audit agents + 7 skills (`new` / `init` / `reconcile` / `audit` / `html` / `handoff` / `fdx-sync`) + the engine scripts, behind a private marketplace (`brock-screenplays`). Every agent and script is **project-parameterized** — it reads the per-screenplay parameters from `PROJECT_PROFILE §0` and degrades gracefully where a project hasn't set something up (an absent capability scopes a run, it doesn't fail it). Proven across two real screenplays (a mature, numbered, locked draft and an early, unnumbered one). Verified: headless `--plugin-dir` load (15 agents + skills register under `screenplay-prep:`) and the full `marketplace add → install → list` cycle. Ingests Highland, **Final Draft** (`.fdx` → Fountain, incl. dual dialogue / inline emphasis / opt-in notes), or any Fountain-exporting tool — no companion app required.
