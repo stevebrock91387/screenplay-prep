@@ -1,11 +1,11 @@
 ---
 name: init
-description: Install the .highland↔PDF lock-step git pre-commit hook into the current screenplay project. The hook is a git hook (not a Claude Code plugin hook) because the .highland is edited outside Claude Code in Highland, so only a git commit-time check can catch it. Use once per project clone, after onboarding.
+description: Install the source↔PDF lock-step git pre-commit hook into the current screenplay project. The hook is a git hook (not a Claude Code plugin hook) because the screenplay is edited outside Claude Code in a writing app, so only a git commit-time check can catch it. Format-aware (Highland bundle OR a Fountain export from any tool); reads filenames from PROJECT_PROFILE §0. Use once per project clone, after onboarding.
 ---
 
 # Install the git hook
 
-You are wiring the `.highland`↔PDF pre-commit hook into the screenplay project at `${CLAUDE_PROJECT_DIR}`. This is a **git** hook, not a Claude Code plugin hook — plugin hooks fire on tool/session events, but the screenplay is edited in Highland (outside Claude Code), so the only reliable enforcement point is `git commit`. The hook blocks a commit that changes the screenplay text inside the `.highland` unless the PDF was re-exported, and it re-derives the body-only `.fountain` + the paged HTML.
+You are wiring the source↔PDF pre-commit hook into the screenplay project at `${CLAUDE_PROJECT_DIR}`. This is a **git** hook, not a Claude Code plugin hook — plugin hooks fire on tool/session events, but the screenplay is edited in a writing app (outside Claude Code), so the only reliable enforcement point is `git commit`. The hook blocks a commit that changes the screenplay text unless the re-exported PDF is staged too, then re-derives the body-only `.fountain` + the paged HTML. It is **project-parameterized** — it reads the source/PDF/derived filenames from `PROJECT_PROFILE §0`, and dispatches on the container: if `source.highland` is set it watches the `.highland` bundle; otherwise it watches the committed Fountain file named in `source.text_mirror` (the Final Draft / WriterDuet / Fathom / any-tool path). No companion app required.
 
 ## Verify first
 
@@ -15,7 +15,7 @@ You are wiring the `.highland`↔PDF pre-commit hook into the screenplay project
 ## Install
 
 3. Recommended (tracked, shareable): create `${CLAUDE_PROJECT_DIR}/.githooks/` if absent, copy `${CLAUDE_PLUGIN_ROOT}/bin/pre-commit` to `.githooks/pre-commit`, `chmod +x` it, and set `git config core.hooksPath .githooks`. This keeps the hook in the repo so a fresh clone just needs the one `git config` line.
-4. The hook expects the screenplay filenames; if this project's `.highland`/PDF names differ from the defaults baked into the hook, point that out — the hook may need its `PDF_PATH`/glob adjusted for this project (a known remaining generalization: the hook reads some hardcoded filenames).
+4. The hook reads its filenames from `PROJECT_PROFILE §0` (`source.highland` / `source.pdf` / `source.text_mirror` / `source.fountain`), so nothing is hardcoded — just confirm §0 is filled. **Final Draft / bare-Fountain projects:** make sure `source.highland: null` and `source.text_mirror` points at the committed full `.fountain` export (the hook watches that file); `source.fountain` should be a *different*, derived body-only path (e.g. `Claude Docs/<name>_body.fountain`). If `§0` isn't filled yet, the hook installs but stays a silent no-op until it is.
 5. Verify it's live: `git config --get core.hooksPath` returns `.githooks`, and the file is executable.
 
 ## Report

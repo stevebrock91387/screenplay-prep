@@ -1,167 +1,129 @@
 #!/usr/bin/env bash
-# .githooks/pre-commit
+# pre-commit — keep the screenplay SOURCE and its rendered PDF in lock-step.
 #
-# Purpose: keep the .highland bundle and its rendered PDF in sync.
-# If the screenplay text inside the .highland (text.md) has changed
-# but the user did not re-export the PDF, block the commit.
+# Project-parameterized: reads PROJECT_PROFILE §0 (Claude Docs/PROJECT_PROFILE.md)
+# for the source/PDF/derived filenames, so it works on ANY screenplay, not just one.
+# It supports two source containers, dispatched on which §0 field is set:
+#   - source.highland set  → HIGHLAND mode: the source is a .highland bundle; the
+#     screenplay text is text.md inside its textbundle (which IS Fountain).
+#   - source.highland null → FOUNTAIN mode: the source is a committed full Fountain
+#     file (the file named in §0 source.text_mirror), exported from any tool —
+#     Final Draft, Highland, Fathom, WriterDuet, etc. No companion app required.
+# (A future `fdx` container would convert .fdx → Fountain first; not handled here.)
+#
+# In both modes: hash the source text; if it changed, REQUIRE the re-exported PDF in
+# the same commit; then derive the body-only .fountain (for the cue extractor),
+# regenerate the paged HTML, and record the new hash in .script-state.
 #
 # Dependencies: bash, git, unzip, shasum, awk. No external services.
-#
-# State: stores the last-known sha256 of text.md in .script-state at
-# the repo root. .script-state is a tracked file; the hook updates it
-# and re-stages it as part of any commit that bumps the screenplay.
-#
-# NOTE: this hook lives in .githooks/ (tracked, sharable). For it to
-# fire on a fresh clone, the cloner must run once:
-#     git config core.hooksPath .githooks
-
+# Install on a fresh clone:  git config core.hooksPath .githooks
 set -e
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
 STATE_FILE=".script-state"
-PDF_PATH="Blank Slate Full Script.pdf"
+PROFILE="Claude Docs/PROJECT_PROFILE.md"
 
-# 1. Find the staged .highland file (added, copied, or modified).
-STAGED_HIGHLAND="$(
-    git diff --cached --name-only --diff-filter=ACM \
-    | grep -E '\.highland$' \
-    | head -n 1 \
-    || true
-)"
+# --- read §0 values (quoted strings; empty if absent/null) ---
+pv() { [ -f "$PROFILE" ] || return 0; grep -m1 -E "^[[:space:]]*$1:[[:space:]]*\"" "$PROFILE" 2>/dev/null | sed -E 's/^[^"]*"([^"]+)".*/\1/' || true; }
+HIGHLAND_PATH="$(pv highland)"
+PDF_PATH="$(pv pdf)"
+TEXT_MIRROR="$(pv text_mirror)"
+FOUNTAIN_PATH="$(pv fountain)"   # the DERIVED body-only fountain (must differ from text_mirror)
 
-if [ -z "$STAGED_HIGHLAND" ]; then
-    # No .highland in this commit; nothing for this hook to do.
-    exit 0
+# No profile → no per-project config to read; nothing for this hook to enforce.
+# (Silent: the hook is harmless until the project is onboarded with a PROJECT_PROFILE.)
+[ -f "$PROFILE" ] || exit 0
+
+TMP_DIR="$(mktemp -d)"; trap 'rm -rf "$TMP_DIR"' EXIT
+TMP_TEXT="$TMP_DIR/full.txt"
+SRC_STAGED=""
+
+# --- locate the staged SOURCE and extract its FULL text into $TMP_TEXT ---
+if [ -n "$HIGHLAND_PATH" ]; then
+    # HIGHLAND mode: find the staged .highland (it may be renamed, so match by extension).
+    SRC_STAGED="$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.highland$' | head -n 1 || true)"
+    [ -z "$SRC_STAGED" ] && exit 0   # no .highland in this commit — nothing to do
+    TMP_BUNDLE="$TMP_DIR/bundle.highland"
+    git show ":${SRC_STAGED}" > "$TMP_BUNDLE"
+    TEXT_PATH="$(unzip -Z1 "$TMP_BUNDLE" 2>/dev/null | grep -E '\.textbundle/text\.md$' | head -n 1)"
+    if [ -z "$TEXT_PATH" ]; then
+        echo "pre-commit: WARNING — no <textbundle>/text.md inside '$SRC_STAGED'; allowing commit, review manually." >&2
+        exit 0
+    fi
+    unzip -p "$TMP_BUNDLE" "$TEXT_PATH" > "$TMP_TEXT" 2>/dev/null || true
+else
+    # FOUNTAIN mode: the source is the committed full Fountain file named in §0 text_mirror.
+    if [ -z "$TEXT_MIRROR" ]; then exit 0; fi
+    SRC_STAGED="$(git diff --cached --name-only --diff-filter=ACM | grep -F -x "$TEXT_MIRROR" | head -n 1 || true)"
+    [ -z "$SRC_STAGED" ] && exit 0   # the source file isn't in this commit — nothing to do
+    git show ":${SRC_STAGED}" > "$TMP_TEXT"
 fi
 
-# 2. Pull the *staged* blob (not the working tree copy) to a temp file.
-TMP_DIR="$(mktemp -d)"
-trap 'rm -rf "$TMP_DIR"' EXIT
-TMP_BUNDLE="$TMP_DIR/bundle.highland"
-git show ":${STAGED_HIGHLAND}" > "$TMP_BUNDLE"
+[ -s "$TMP_TEXT" ] || { echo "pre-commit: WARNING — source text is empty; allowing commit." >&2; exit 0; }
 
-# 3. Locate <textbundle>/text.md inside the zip without hardcoding the
-#    textbundle name (it tracks the .highland filename, which may change).
-TEXT_PATH="$(
-    unzip -Z1 "$TMP_BUNDLE" 2>/dev/null \
-    | grep -E '\.textbundle/text\.md$' \
-    | head -n 1
-)"
-
-if [ -z "$TEXT_PATH" ]; then
-    echo "pre-commit: WARNING — could not find <textbundle>/text.md inside" >&2
-    echo "  '$STAGED_HIGHLAND'. Bundle may be corrupt or non-standard." >&2
-    echo "  Allowing commit; review manually." >&2
-    exit 0
-fi
-
-# 4. Hash the staged screenplay text.
-NEW_HASH="$(
-    unzip -p "$TMP_BUNDLE" "$TEXT_PATH" 2>/dev/null \
-    | shasum -a 256 \
-    | awk '{print $1}'
-)"
-
-# 5. Read the last recorded hash, if any.
+# --- hash the source text, compare to the recorded baseline ---
+NEW_HASH="$(shasum -a 256 "$TMP_TEXT" | awk '{print $1}')"
 OLD_HASH=""
-if [ -f "$STATE_FILE" ]; then
-    OLD_HASH="$(
-        awk -F= '$1 == "text_md_sha256" {print $2}' "$STATE_FILE" \
-        | tr -d '[:space:]'
-    )"
-fi
+[ -f "$STATE_FILE" ] && OLD_HASH="$(awk -F= '$1=="text_md_sha256"{print $2}' "$STATE_FILE" | tr -d '[:space:]')"
+[ "$NEW_HASH" = "$OLD_HASH" ] && exit 0   # UI-only save / no text change
 
-# 6. Unchanged → UI-only save; let it through.
-if [ "$NEW_HASH" = "$OLD_HASH" ]; then
-    exit 0
-fi
-
-# 7. Changed → require the rendered PDF to be in this commit too.
-PDF_STAGED="$(
-    git diff --cached --name-only --diff-filter=ACM \
-    | grep -F -x "$PDF_PATH" \
-    || true
-)"
-
-if [ -z "$PDF_STAGED" ]; then
-    cat >&2 <<EOF
+# --- changed → require the rendered PDF in this same commit ---
+if [ -n "$PDF_PATH" ]; then
+    PDF_STAGED="$(git diff --cached --name-only --diff-filter=ACM | grep -F -x "$PDF_PATH" || true)"
+    if [ -z "$PDF_STAGED" ]; then
+        cat >&2 <<EOF
 
 pre-commit: BLOCKED — screenplay text changed but the PDF was not re-exported.
-
-The .highland bundle's screenplay text (text.md inside the zip) has a new hash:
     old: ${OLD_HASH:-<none recorded>}
     new: $NEW_HASH
 
-Re-export from Highland (File > Export > PDF), save over:
+Re-export the PDF from your screenwriting app, save over:
     $PDF_PATH
 
-Then stage both and retry:
-    git add "$STAGED_HIGHLAND" "$PDF_PATH"
-    git commit ...
+then stage both and retry:
+    git add "$SRC_STAGED" "$PDF_PATH" && git commit ...
 
-Page count and all derived facts in this repo depend on the rendered PDF.
-This hook does not run Highland for you — there's no headless export.
-Its job is to keep the script and its pagination in lock-step.
+Page count and all derived facts in this repo depend on the rendered PDF. This hook
+does not run your app for you — its job is to keep the script and its pagination in
+lock-step.
 
 EOF
-    exit 1
+        exit 1
+    fi
 fi
 
-# 8. PDF is staged. Record the new hash, re-stage state file.
+# --- record the new baseline, re-stage .script-state ---
 {
     echo "text_md_sha256=$NEW_HASH"
-    echo "highland_path=$STAGED_HIGHLAND"
+    echo "source_path=$SRC_STAGED"
     echo "updated_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 } > "$STATE_FILE"
-
 if ! git add "$STATE_FILE"; then
-    echo "" >&2
-    echo "pre-commit: ERROR — failed to stage updated $STATE_FILE." >&2
-    echo "  The new text.md hash was written to disk but not added to the commit." >&2
-    echo "  This would commit the bundle + PDF without updating the recorded baseline," >&2
-    echo "  leaving future commits unable to detect that the text changed." >&2
-    echo "  Aborting. Investigate the git add failure, then retry the commit." >&2
+    echo "pre-commit: ERROR — failed to stage updated $STATE_FILE; aborting so the baseline can't desync." >&2
     exit 1
 fi
 
-# 8b. Re-derive the tracked plain-text .fountain from the staged bundle's text.md
-#     (which IS the Fountain content). No manual Fountain export needed; it can
-#     never drift from what's committed.
-TMP_TEXT="$TMP_DIR/text.md"
-if unzip -p "$TMP_BUNDLE" "$TEXT_PATH" > "$TMP_TEXT" 2>/dev/null && [ -s "$TMP_TEXT" ]; then
-
-    # Tracked .fountain — the source the casting extractor + agents parse.
-    # BODY ONLY: strip the Fountain title page (start at the first slugline) so
-    # the cue extractor never reads TITLE:/AUTHOR:/NOTES: as character cues.
-    FOUNTAIN_PATH="Blank Slate Full Script.fountain"
+# --- derive the body-only .fountain (strip the Fountain title page) for the extractor ---
+# (Skipped if §0 source.fountain == text_mirror, to avoid overwriting the writer's source.)
+if [ -n "$FOUNTAIN_PATH" ] && [ "$FOUNTAIN_PATH" != "$TEXT_MIRROR" ]; then
     if awk 'f || /^(INT|EXT|EST|I\/E)[.\/ ]/ {f=1} f' "$TMP_TEXT" > "$FOUNTAIN_PATH" && [ -s "$FOUNTAIN_PATH" ]; then
-        if git add "$FOUNTAIN_PATH"; then
-            echo "pre-commit: re-derived $FOUNTAIN_PATH (body only) from the screenplay."
-        else
-            echo "pre-commit: WARNING — could not stage $FOUNTAIN_PATH." >&2
-        fi
+        git add "$FOUNTAIN_PATH" && echo "pre-commit: re-derived $FOUNTAIN_PATH (body only) from the screenplay." \
+            || echo "pre-commit: WARNING — could not stage $FOUNTAIN_PATH." >&2
     else
         echo "pre-commit: WARNING — could not re-derive $FOUNTAIN_PATH." >&2
     fi
-
-    # Regenerate the Squarespace script-reader HTML from the same extracted text.md
-    # (it carries the title page the body-only .fountain lacks). Output is gitignored
-    # (Claude Docs/generated/), so it is NOT committed — it's the current file to paste
-    # into the Squarespace code block. NON-FATAL: an HTML hiccup must never block a commit.
-    HTML_OUT="Claude Docs/generated/script_paged.html"
-    if command -v python3 >/dev/null 2>&1 && [ -f scripts/script_to_html_paged.py ]; then
-        mkdir -p "Claude Docs/generated" 2>/dev/null || true
-        if python3 scripts/script_to_html_paged.py --input "$TMP_TEXT" --out "$HTML_OUT" >/dev/null 2>&1; then
-            echo "pre-commit: regenerated $HTML_OUT (paste into Squarespace)."
-        else
-            echo "pre-commit: WARNING — $HTML_OUT regen failed (non-blocking)." >&2
-        fi
-    fi
-else
-    echo "pre-commit: WARNING — could not extract text.md; skipped .fountain refresh." >&2
 fi
 
-echo "pre-commit: script-state updated (text.md sha256: ${NEW_HASH:0:12}…). PDF staged. Proceeding."
+# --- regenerate the paged HTML reader (gitignored output; non-fatal) ---
+HTML_OUT="Claude Docs/generated/script_paged.html"
+if command -v python3 >/dev/null 2>&1 && [ -f scripts/script_to_html_paged.py ]; then
+    mkdir -p "Claude Docs/generated" 2>/dev/null || true
+    python3 scripts/script_to_html_paged.py --input "$TMP_TEXT" --out "$HTML_OUT" >/dev/null 2>&1 \
+        && echo "pre-commit: regenerated $HTML_OUT (paste into your web reader)." \
+        || echo "pre-commit: WARNING — $HTML_OUT regen failed (non-blocking)." >&2
+fi
+
+echo "pre-commit: script-state updated (source sha256: ${NEW_HASH:0:12}…). PDF staged. Proceeding."
 exit 0

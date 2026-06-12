@@ -8,11 +8,17 @@
 
 ```yaml
 source:
-  highland: "«Title».highland"          # bundle name; text.md found via */text.md
-  pdf: "«Title».pdf"
-  fountain: "«Title».fountain"          # hook-derived, body-only
-  text_mirror: "Claude Docs/«Title»_text.md"   # title page + body; agent/converter input
-  format: fountain                      # fountain | text | fdx(needs-convert)
+  # The git hook dispatches on which container you commit:
+  #   • Highland users: set `highland` to the bundle; commit it + the PDF.
+  #   • Final Draft / WriterDuet / Fathom / any tool: set `highland: null` and EXPORT
+  #     a full Fountain file + a PDF, commit both, and point `text_mirror` at that
+  #     .fountain. The engine reads Fountain text + the PDF — no companion app needed.
+  highland: null                        # the .highland bundle, OR null for a Fountain-export workflow
+  pdf: "«Title».pdf"                    # the rendered PDF (pagination authority); commit it with the source
+  text_mirror: "«Title».fountain"       # the FULL screenplay text the agents read — for a Fountain-export
+                                        # workflow this IS your committed .fountain; for Highland, "Claude Docs/«Title»_text.md"
+  fountain: "Claude Docs/«Title»_body.fountain"   # DERIVED body-only fountain for the cue extractor (must differ from text_mirror)
+  format: fountain                      # content type: fountain | text | fdx(needs-convert)
 
 scene_markers:
   expected: true                        # FALSE for unlocked drafts (no #N#) — else "missing markers" is a false defect
