@@ -16,7 +16,10 @@ Handles (verified against real FD exports):
     (`+`-separated) becomes Fountain emphasis (`**bold**`, `*italic*`, `_underline_`,
     `***bold-italic***`). Applied to prose only (Action/Dialogue/General); cues,
     sluglines, and transitions stay PLAIN so downstream cue/slug parsing is clean.
-    `AllCaps` / `HiddenText` have no Fountain inline equivalent and are ignored.
+    `AllCaps` has no Fountain inline equivalent and is ignored; **`HiddenText` runs
+    are OMITTED entirely** — it's FD's omit-from-print flag, so the text is absent
+    from the rendered PDF the engine reconciles against, and keeping it would inject
+    phantom cues/lines.
   • Script notes (opt-in, --notes) — <ScriptNote> blocks live OUTSIDE <Content>,
     anchored by an FD-internal `Range` char offset that doesn't reproduce reliably
     against the flattened body, so notes are emitted as a trailing `[[ ... ]]` block
@@ -48,8 +51,9 @@ PLAIN_TYPES = {"Scene Heading", "Character", "Transition"}
 def _style_wrap(s, style):
     """Wrap one <Text> run in Fountain emphasis per its FDX `Style` attribute
     (`Bold+Italic+Underline`, '+'-separated). Leading/trailing whitespace is kept
-    OUTSIDE the markers (Fountain emphasis can't hug a space). `AllCaps` /
-    `HiddenText` carry no Fountain inline equivalent and are ignored."""
+    OUTSIDE the markers (Fountain emphasis can't hug a space). `AllCaps` carries no
+    Fountain inline equivalent and is ignored (`HiddenText` runs never reach here —
+    they're dropped upstream in `_text`)."""
     if not style or not s.strip():
         return s
     tokens = set(style.split("+"))
@@ -76,11 +80,15 @@ def _text(para, styled=False):
     """Concatenate the DIRECT <Text> children of a Paragraph, ignoring nested
     metadata (SceneProperties, SceneArcBeats, …). With styled=True each run is
     wrapped per its Style attr; otherwise runs join raw (historical behavior —
-    used for cues, slugs, the title page, and notes)."""
+    used for cues, slugs, the title page, and notes). Runs flagged `HiddenText`
+    (FD's omit-from-print) are dropped entirely, for every paragraph type."""
     parts = []
     for t in para.findall("Text"):
+        style = t.get("Style", "")
+        if style and "HiddenText" in style.split("+"):
+            continue  # omit-from-print: drop the run, styled or not
         s = t.text or ""
-        parts.append(_style_wrap(s, t.get("Style", "")) if styled else s)
+        parts.append(_style_wrap(s, style) if styled else s)
     return "".join(parts).strip()
 
 
