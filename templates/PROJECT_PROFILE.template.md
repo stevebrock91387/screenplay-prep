@@ -8,17 +8,23 @@
 
 ```yaml
 source:
-  # The git hook dispatches on which container you commit:
-  #   • Highland users: set `highland` to the bundle; commit it + the PDF.
-  #   • Final Draft / WriterDuet / Fathom / any tool: set `highland: null` and EXPORT
-  #     a full Fountain file + a PDF, commit both, and point `text_mirror` at that
-  #     .fountain. The engine reads Fountain text + the PDF — no companion app needed.
-  highland: null                        # the .highland bundle, OR null for a Fountain-export workflow
+  # Three onboarding paths, depending on your writing app:
+  #   • Highland: set `highland` to the bundle; commit it + the PDF.
+  #   • Final Draft (.fdx): set `fdx` to the file; run scripts/fdx_to_fountain.py to
+  #     produce the .fountain `text_mirror`, then commit the .fdx + that .fountain + PDF.
+  #     (/screenplay-prep:new does the conversion for you. FD scene numbers carry through
+  #     as `#N#` markers, so scene_markers.expected can be true.)
+  #   • WriterDuet / Fathom / anything else: EXPORT a full Fountain file + a PDF; set
+  #     `highland: null`, `fdx: null`, and point `text_mirror` at that .fountain.
+  # The engine always reads Fountain text + the PDF — no companion app required.
+  highland: null                        # the .highland bundle (Highland), else null
+  fdx: null                             # the Final Draft .fdx (converted to text_mirror), else null
   pdf: "«Title».pdf"                    # the rendered PDF (pagination authority); commit it with the source
-  text_mirror: "«Title».fountain"       # the FULL screenplay text the agents read — for a Fountain-export
-                                        # workflow this IS your committed .fountain; for Highland, "Claude Docs/«Title»_text.md"
+  text_mirror: "«Title».fountain"       # the FULL screenplay text the agents read. Bare-Fountain: your committed
+                                        # .fountain. Highland: "Claude Docs/«Title»_text.md". FDX: the CONVERTED
+                                        # "Claude Docs/«Title».fountain" (output of fdx_to_fountain.py).
   fountain: "Claude Docs/«Title»_body.fountain"   # DERIVED body-only fountain for the cue extractor (must differ from text_mirror)
-  format: fountain                      # content type: fountain | text | fdx(needs-convert)
+  format: fountain                      # content type: fountain | fdx
 
 scene_markers:
   expected: true                        # FALSE for unlocked drafts (no #N#) — else "missing markers" is a false defect
