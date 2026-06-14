@@ -29,7 +29,7 @@ with a warning — that path can split long rows across pages). DOCX requires no
 the project's Conversion Tools/md2docx.js; if absent, the PDF still builds and DOCX
 is skipped with a note. Paths resolve against $CLAUDE_PROJECT_DIR when set.
 """
-import argparse, csv, html, json, os, re, shutil, subprocess, sys, tempfile, zipfile
+import argparse, csv, html, json, os, shutil, subprocess, sys, tempfile
 from pathlib import Path
 
 CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
@@ -139,26 +139,10 @@ def build_docx(stem: Path, repo: Path, md_path: Path):
         print("  (skipped DOCX — Conversion Tools/md2docx.js not found)")
         return None
     docx_path = stem.parent / f"{stem.name}.docx"
-    with tempfile.TemporaryDirectory() as td:
-        raw = Path(td) / "raw.docx"
-        subprocess.run(["node", str(md2docx), str(md_path), str(raw)],
-                       check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        zin = zipfile.ZipFile(raw, "r")
-        doc = zin.read("word/document.xml").decode("utf-8")
-        doc = doc.replace('<w:pgSz w:w="12240" w:h="15840" w:orient="portrait"/>',
-                          '<w:pgSz w:w="15840" w:h="12240" w:orient="landscape"/>')
-        doc = re.sub(r'<w:tblW[^/]*/>', '<w:tblW w:type="pct" w:w="5000"/>', doc)
-        doc = doc.replace('<w:tblW w:type="pct" w:w="5000"/>',
-                          '<w:tblW w:type="pct" w:w="5000"/><w:tblLayout w:type="autofit"/>', 1)
-        doc = re.sub(r'<w:tblGrid>.*?</w:tblGrid>',
-                     '<w:tblGrid><w:gridCol w:w="1700"/><w:gridCol w:w="10280"/>'
-                     '<w:gridCol w:w="1700"/></w:tblGrid>', doc, flags=re.S)
-        doc = re.sub(r'<w:tcW[^/]*/>', '', doc)
-        with zipfile.ZipFile(docx_path, "w", zipfile.ZIP_DEFLATED) as zout:
-            for it in zin.infolist():
-                zout.writestr(it, doc if it.filename == "word/document.xml"
-                              else zin.read(it.filename))
-        zin.close()
+    # md2docx.js now emits full-width AutoFit tables and accepts a landscape arg,
+    # so the cast report just calls it directly — no OOXML post-patch needed.
+    subprocess.run(["node", str(md2docx), str(md_path), str(docx_path), "landscape"],
+                   check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     return docx_path
 
 
