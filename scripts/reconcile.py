@@ -64,6 +64,7 @@ def _load_paths():
         return (REPO_ROOT / m.group(1)) if m else None     # §0 value, or None if null/absent/no-profile
 
     return {
+        "dcpg":           res("dcpg"),        # Decoupage .dcpg text.md (plain file) — wins over highland
         "highland":       res("highland"),
         "pdf":            res("pdf"),
         "script_text":    res("text_mirror"),
@@ -118,30 +119,40 @@ def fmt_mmss(total_min):
 
 # -------------------- Preflight --------------------
 def preflight():
-    for k in ("highland", "pdf", "script_state"):
+    # DCPG mode (source.dcpg set) wins over the retired .highland — mirrors the
+    # pre-commit hook's dispatch. In DCPG mode the source text.md is a plain file inside
+    # the .dcpg bundle DIRECTORY (not a zip), so hash it directly; else fall back to
+    # unzipping the .highland bundle. Without this, a Highland→Decoupage-migrated project
+    # hashes the stale retired .highland and blocks forever against the live .dcpg hash.
+    src_key = "dcpg" if P.get("dcpg") is not None else "highland"
+    for k in (src_key, "pdf", "script_state"):
         if P[k] is None:
             return False, f"PROJECT_PROFILE §0 does not define a path for '{k}'"
         if not P[k].exists():
             return False, f"missing: {P[k].name}"
-    with zipfile.ZipFile(P["highland"]) as z:
-        name = next((n for n in z.namelist() if n.endswith(".textbundle/text.md")), None)
-        if not name:
-            return False, "no <textbundle>/text.md inside .highland"
-        cur_hash = hashlib.sha256(z.read(name)).hexdigest()
+    if src_key == "dcpg":
+        cur_hash = hashlib.sha256(P["dcpg"].read_bytes()).hexdigest()
+    else:
+        with zipfile.ZipFile(P["highland"]) as z:
+            name = next((n for n in z.namelist() if n.endswith(".textbundle/text.md")), None)
+            if not name:
+                return False, "no <textbundle>/text.md inside .highland"
+            cur_hash = hashlib.sha256(z.read(name)).hexdigest()
     recorded = None
     for line in P["script_state"].read_text().splitlines():
         if line.startswith("text_md_sha256="):
             recorded = line.split("=", 1)[1].strip()
             break
     if cur_hash != recorded:
+        src_label = "the .dcpg source text" if src_key == "dcpg" else ".highland"
         msg = (
-            "BLOCKED — .highland and PDF are out of sync.\n\n"
-            f"  current text.md sha256: {cur_hash}\n"
-            f"  .script-state recorded:  {recorded or '<none>'}\n\n"
-            "Re-export the PDF from Highland (File > Export > PDF), save over\n"
+            f"BLOCKED — {src_label} and the committed PDF are out of sync.\n\n"
+            f"  current source sha256:  {cur_hash}\n"
+            f"  .script-state recorded: {recorded or '<none>'}\n\n"
+            "Re-export the PDF from the editor, save over\n"
             f"  {P['pdf'].name}\n"
             "then stage and commit both. The pre-commit hook will update .script-state.\n"
-            "This script cannot render the PDF — Highland's export is GUI-only."
+            "This script cannot render the PDF — the export is GUI-only."
         )
         return False, msg
     return True, "in sync"
@@ -577,7 +588,7 @@ EXCLUDE_FROM_GREP = {
     ".script-state",
     "scripts/reconcile.py",
     "Claude Docs/HANDOFF.md",           # historical narrative deliberately contains old values
-} | {str(P[k].relative_to(REPO_ROOT)) for k in ("highland", "pdf", "canonical") if P[k] is not None}
+} | {str(P[k].relative_to(REPO_ROOT)) for k in ("dcpg", "highland", "pdf", "canonical") if P[k] is not None}
 
 TEXT_EXTS = {".md", ".txt", ".csv", ".json", ".py", ".sh", ".js", ".swift"}
 
